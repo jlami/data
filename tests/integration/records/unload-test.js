@@ -2017,7 +2017,7 @@ test('unload should invalidate async hasMany', function(assert) {
     assert.equal(type, Boat, 'findRecord(_, type) is correct');
 
     if (id === '2' && isUnloaded) {
-      throw "not found";
+      return EmberPromise.reject("not found");
     }
 
     let relationships = {
@@ -2036,6 +2036,10 @@ test('unload should invalidate async hasMany', function(assert) {
         relationships
       }
     }
+  };
+  
+  env.adapter.deleteRecord = function() {
+    return EmberPromise.resolve();
   };
 
   env.adapter.findHasMany = (store, snapshot, link) => {
@@ -2105,16 +2109,20 @@ test('unload should invalidate async hasMany', function(assert) {
       assert.equal(boat3.belongsTo('person').id(), '1', 'initially relationship established rhs');
 
       isUnloaded = true;
-      run(() => boat2.unloadRecord());
-
+      return run(() => { 
+        boat2._internalModel.transitionTo('deleted.saved');
+        boat2.unloadRecord();
+      });
+    }).then(() => {   
       assert.deepEqual(boats.mapBy('id'), ['3'], 'unloaded boat is removed from ManyArray');
+      //assert.deepEqual(person.hasMany('boats').ids(), ['2', '3'], 'hasMany should still have the dematerialized record, until the refetch');
       //NOTE: uncommenting the next line fixes this test
-//      return person.hasMany('boats').reload();
-    }).then(() => {
-      assert.deepEqual(person.hasMany('boats').ids(), ['3'], 'hasMany should also only have 1 left');
-      return run(() => person.get('boats'));
+      //return person.hasMany('boats').reload();
+    }).then(() => {      
+      return run(() => person.get('boats'));//refetch
     }).then(newBoats => {
-      assert.equal(newBoats.length, 1, 'new ManyArray has only 1 boat after unload');
+      assert.equal(newBoats.length, 1, 'new ManyArray has only 1 boat after refetch');
+      assert.deepEqual(person.hasMany('boats').ids(), ['3'], 'hasMany should have only one after refetch');
     })
   );
 });
